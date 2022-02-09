@@ -12,14 +12,19 @@ import pandas as pd
 import numpy as np
 import torch.nn as nn
 import sys, os, shutil, pickle, argparse, pdb
+import torch.nn.functional as F
 
 sys.path.append(os.path.join(str(Path(os.path.realpath(__file__)).parents[1]), 'model'))
 sys.path.append(os.path.join(str(Path(os.path.realpath(__file__)).parents[1]), 'utils'))
 
 from training_tools import EarlyStopping, seed_worker, result_summary
-from attack_model import attack_model
+from attack_model_forDefense import attack_model
 
-EarlyStopping
+from tqdm import tqdm
+
+from art.attacks.evasion import ProjectedGradientDescent
+from art.estimators.classification import PyTorchClassifier
+from art.attacks.evasion.projected_gradient_descent.projected_gradient_descent import ProjectedGradientDescent
 
 # some general mapping for this script
 gender_dict = {'F': 0, 'M': 1}
@@ -44,15 +49,31 @@ class WeightDataGenerator():
         bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
         return weights, bias, gender
 
-def evaluate(model, data_loader, loss_func):
+def evaluate(model, data_loader, loss_func, privacy_preserve=False, privacy_generator=None):
     
     model.eval()
     step_outputs = []
-    
-    for batch_idx, data_batch in enumerate(data_loader):
+    for batch_idx, data_batch in enumerate(tqdm(data_loader)):
         weights, bias, y = data_batch
         weights, bias, y = weights.to(device), bias.to(device), y.to(device)
-        logits = model(weights.float().unsqueeze(dim=1), bias.float())
+        if not privacy_preserve:
+            weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
+            logits = model(weights_bias)
+        else:
+            weights = weights.to('cpu').float()
+            bias = bias.to('cpu').float()
+            weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
+            weights_bias = np.array(weights_bias)
+            if privacy_generator.targeted:
+                tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=weights.shape[0]))))
+                weights_bias = torch.tensor(privacy_generator.generate(weights_bias, tar_labels))
+            else:
+                weights_bias = torch.tensor(privacy_generator.generate(weights_bias))
+            weights = weights_bias[:,:,:-1].to(device)
+            bias = weights_bias[:,:,-1].to(device)
+            weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
+            logits = model(weights_bias)
+        
         loss = loss_func(logits, y)
 
         predictions = np.argmax(logits.detach().cpu().numpy(), axis=1)
@@ -84,9 +105,17 @@ if __name__ == '__main__':
     parser.add_argument('--leak_layer', default='full')
     parser.add_argument('--dropout', default=0.2)
     parser.add_argument('--privacy_budget', default=None)
+    parser.add_argument('--privacy_preserve_adversarial', default=False)
     parser.add_argument('--save_dir', default='/media/data/projects/speech-privacy')
-    args = parser.parse_args()
 
+    parser.add_argument('--eval_undefended', default=False)
+    parser.add_argument('--perturb_norm', default='l_2')
+    parser.add_argument('--eps', default=0.3)
+    parser.add_argument('--eps_step', default=0.1)
+    parser.add_argument('--max_iter', default=100)
+    parser.add_argument('--targeted', default=False)
+    
+    args = parser.parse_args()
     seed_worker(8)
     device = torch.device("cuda:"+str(args.device)) if torch.cuda.is_available() else "cpu"
     if torch.cuda.is_available(): print('GPU available, use GPU')
@@ -150,7 +179,8 @@ if __name__ == '__main__':
     eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'.pt'))))
     eval_model = eval_model.to(device)
 
-    if False: # Set to true to evaluate benign performance
+    if False: #args.eval_undefended is True: # Set to true to evaluate benign performance
+        pdb.set_trace()
         print("Evaluating benign attacker performance")
         # 2.1 we perform 5 fold evaluation, since we also train the private data 5 times
         for fold_idx in range(5):
@@ -178,40 +208,76 @@ if __name__ == '__main__':
         
             row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
             save_result_df = pd.concat([save_result_df, row_df])
+            save_result_df.to_csv(str(attack_model_result_path.joinpath('private_' + str(args.dataset) + '_result.csv')))
             del dataset_test, test_loader
             
         print("Performance on benign samples\n")
         print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
-    
-    print("Evaluating adversarial perturbed attacker performance")
-    for fold_idx in range(5):
-        test_data_dict = {}
-        for epoch in range(int(args.num_epochs)):
-            row_df = pd.DataFrame(index=['fold'+str(int(fold_idx+1))])
-            
-            # Model related
-            federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
-            weight_file_str = str(federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
-
-            with open(weight_file_str, 'rb') as f:
-                test_gradient_dict = pickle.load(f)
-            pdb.set_trace()
-            for speaker_id in test_gradient_dict:
-                data_key = str(fold_idx)+'_'+str(epoch)+'_'+speaker_id
-                gradients = test_gradient_dict[speaker_id]['gradient']
-                test_data_dict[data_key] = {}
-                test_data_dict[data_key]['gender'] = test_gradient_dict[speaker_id]['gender']
-                test_data_dict[data_key][weight_name] = gradients[weight_idx]
-                test_data_dict[data_key][bias_name] = gradients[bias_idx]
-
-        dataset_test = WeightDataGenerator(list(test_data_dict.keys()), test_data_dict)
-        test_loader = DataLoader(dataset_test, batch_size=20, num_workers=0, shuffle=False)
-        test_result = evaluate(eval_model, test_loader, loss)
-    
-        row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
-        save_result_df = pd.concat([save_result_df, row_df])
-        del dataset_test, test_loader
+    if args.privacy_preserve_adversarial: 
+        print("Evaluating adversarial perturbed attacker performance")
+        attack_model_result_path = attack_model_result_path.joinpath(
+                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}'.format(args.perturb_norm, 
+                                    args.eps, 
+                                    args.eps_step, 
+                                    str(args.targeted)))
+        os.makedirs(attack_model_result_path, exist_ok=True)
         
-    pdb.set_trace()
-    print("Performance on benign samples\n")
-    print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
+        # Wrap model for use in art framework to generate adversarial perturbations
+        # To generate adversarial perturbations for weight gradients
+        wrapped_model_for_weights = PyTorchClassifier(
+                        eval_model,
+                        loss=loss,
+                        input_shape=(256,989),
+                        nb_classes=2)
+        if args.perturb_norm=='l_inf':
+            l_norm = np.inf
+        elif args.perturb_norm=='l_2':
+            l_norm = 2
+        elif args.perturb_norm=='l_1':
+            l_norm = 1
+        ############################# NEED TO REMOVE HARDCODING #######################################
+        if True:  
+            targeted = True
+        else:
+            targeted = False
+            
+        privacy_generator = ProjectedGradientDescent(wrapped_model_for_weights, 
+                                eps=float(args.eps), 
+                                eps_step=float(args.eps_step), 
+                                norm=l_norm, 
+                                max_iter=int(args.max_iter), 
+                                targeted=targeted)
+        for fold_idx in range(5):
+            print("Evaluating attacker model on fold {}".format(fold_idx))
+            test_data_dict = {}
+            for epoch in range(int(args.num_epochs)):
+                row_df = pd.DataFrame(index=['fold'+str(int(fold_idx+1))])
+                
+                # Model related
+                federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
+                weight_file_str = str(federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
+
+                with open(weight_file_str, 'rb') as f:
+                    test_gradient_dict = pickle.load(f)
+                for speaker_id in test_gradient_dict:
+                    data_key = str(fold_idx)+'_'+str(epoch)+'_'+speaker_id
+                    gradients = test_gradient_dict[speaker_id]['gradient']
+                    test_data_dict[data_key] = {}
+                    test_data_dict[data_key]['gender'] = test_gradient_dict[speaker_id]['gender']
+                    test_data_dict[data_key][weight_name] = gradients[weight_idx]
+                    test_data_dict[data_key][bias_name] = gradients[bias_idx]
+
+            dataset_test = WeightDataGenerator(list(test_data_dict.keys()), test_data_dict)
+            test_loader = DataLoader(dataset_test, batch_size=80, num_workers=0, shuffle=False)
+            test_result = evaluate(eval_model, test_loader, loss, privacy_preserve=True, privacy_generator=privacy_generator)
+            row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
+            save_result_df = pd.concat([save_result_df, row_df])
+            del dataset_test, test_loader
+            
+        pdb.set_trace()
+        row_df = pd.DataFrame(index=['average'])
+        row_df['acc'], row_df['uar'] = np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])
+        save_result_df = pd.concat([save_result_df, row_df])
+        save_result_df.to_csv(str(attack_model_result_path.joinpath('private_' + str(args.dataset) + '_result.csv')))
+        print("Performance on privacy preserved samples\n")
+        print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
