@@ -95,10 +95,12 @@ if __name__ == '__main__':
             cmd_str += ' --eps ' + config['privacy_preserve']['eps']
             cmd_str += ' --eps_step ' + config['privacy_preserve']['eps_step']
             cmd_str += ' --max_iter ' + config['privacy_preserve']['max_iter']
-            if config['mode'].getboolean('targeted'):
-                cmd_str += ' --targeted '
-                #cmd_str += ' --targeted ' + config['mode']['targeted']
+            if config['privacy_preserve']['prob_0']:
+                cmd_str += ' --prob_0 ' + config['privacy_preserve']['prob_0']
             cmd_str += ' --privacy_preserve_adversarial '
+            if config['mode'].getboolean('surrogate'):
+                cmd_str += ' --surrogate '
+                cmd_str += ' --surrogate_dataset ' + config['mode']['surrogate_dataset']
             #cmd_str += ' --privacy_preserve_adversarial ' + config['mode']['privacy_preserve_adversarial']
         else: 
             cmd_str = 'taskset 100 python3 evaluate_attack/federated_attribute_attack.py --dataset ' + config['dataset']['private_dataset']
@@ -116,9 +118,8 @@ if __name__ == '__main__':
         print(cmd_str)
         os.system(cmd_str)
 
-
     # 6. Training SER model with adversarially perturbed gradients or weights (privacy preserving)
-    if config['mode'].getboolean('ser_training_privacy_whitebox') is True:
+    if config['mode'].getboolean('ser_training_privacy') is True:
         for dataset in [config['dataset']['private_dataset']]:
             cmd_str = 'taskset 100 python3 train/federated_ser_classifier_privacy.py --dataset ' + dataset
             cmd_str += ' --feature_type ' + config['feature']['feature']
@@ -136,7 +137,12 @@ if __name__ == '__main__':
             cmd_str += ' --max_iter ' + config['privacy_preserve']['max_iter']
             if config['mode'].getboolean('targeted'):
                 cmd_str += ' --targeted '
-            
+                if config['privacy_preserve']['prob_0']:
+                    cmd_str += ' --prob_0 ' + config['privacy_preserve']['prob_0']
+            if config['mode'].getboolean('surrogate'):
+                cmd_str += ' --surrogate '
+                cmd_str += ' --surrogate_dataset ' + config['mode']['surrogate_dataset']
+                
             print('Traing SER model with privacy')
             print(cmd_str)
             os.system(cmd_str)

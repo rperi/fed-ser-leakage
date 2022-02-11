@@ -155,13 +155,14 @@ def read_data_dict_by_client(dataset_list, fold_idx):
                     
     return return_train_dict, return_val_dict, return_test_dict
 
-def privacy_perturb(updates):
+def privacy_perturb(updates, prob_0):
     weights = updates['dense1.weight'].to('cpu').float()
     bias = updates['dense1.bias'].to('cpu').float()
     weights_bias = torch.cat((weights,bias.unsqueeze(dim=1)),1)
     weights_bias = np.array(weights_bias)
     if privacy_generator.targeted:
-        tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=1))))
+        prob_1 = 1-float(prob_0)  # Probability of generating label=1
+        tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=1, p=[prob_0,prob_1]))))
         weights_bias = torch.tensor(privacy_generator.generate(np.expand_dims(weights_bias,0), tar_labels))
     else:
         weights_bias = torch.tensor(privacy_generator.generate(np.expand_dims(weights_bias,0)))
@@ -194,6 +195,9 @@ if __name__ == '__main__':
     parser.add_argument('--eps_step', default=0.1)
     parser.add_argument('--max_iter', default=100)
     parser.add_argument('--targeted', default=False, action='store_true')
+    parser.add_argument('--prob_0', default=0.5) # Probability of choosing label 0 as target
+    parser.add_argument('--surrogate', default=False, action='store_true')
+    parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
     args = parser.parse_args()
 
     preprocess_path = Path(args.save_dir).joinpath('federated_learning', args.feature_type, args.pred)
@@ -214,21 +218,23 @@ if __name__ == '__main__':
     
     # Load attacker model
     attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str        )
-    model_setting_str +=  '_eps_' + str(args.eps)
     loss = nn.NLLLoss().to(device)
     save_result_df = pd.DataFrame()
     eval_model = attack_model(args.leak_layer, args.feature_type)
-    eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'.pt'))))
+    if args.surrogate:
+        eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'_surrogate.pt'))))
+    else:
+        eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'.pt'))))
     eval_model = eval_model.to(device)
     
     if args.perturb_norm=='l_inf':
-            l_norm = np.inf
+        l_norm = np.inf
     elif args.perturb_norm=='l_2':
         l_norm = 2 
     elif args.perturb_norm=='l_1':
         l_norm = 1 
     ############################# NEED TO REMOVE HARDCODING #######################################
-    if True:  
+    if args.targeted:  
         targeted = True
     else:
         targeted = False
@@ -247,6 +253,12 @@ if __name__ == '__main__':
                             norm=l_norm, 
                             max_iter=int(args.max_iter), 
                             targeted=targeted)
+    model_setting_str +=  '_eps_' + str(args.eps)
+    pdb.set_trace()
+    if args.surrogate:
+        model_setting_str +=  '_surrogate_' + str(args.surrogate_dataset)
+    if args.prob_0 != 0.5:
+        model_setting_str +=  '_prob0_' + str(args.prob_0)
     # We perform 5 fold experiments
     for fold_idx in tqdm(range(5)):
         # save folder details
@@ -305,7 +317,10 @@ if __name__ == '__main__':
                     local_update, train_result = trainer.update_weights(model=copy.deepcopy(global_model))
                 else:
                     local_update, train_result = trainer.update_gradients(model=copy.deepcopy(global_model))
-                local_update = privacy_perturb(local_update)
+
+                # Generate adversarial perturbations
+                local_update = privacy_perturb(local_update, prob_0=args.prob_0)
+
                 local_updates.append(copy.deepcopy(local_update))
 
                 # read params to save

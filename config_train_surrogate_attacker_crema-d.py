@@ -13,7 +13,7 @@ attack_evaluate = False
 privacy_preserve_adversarial = False
 eval_undefended = False
 targeted = True
-ser_training_privacy_whitebox = False
+ser_training_privacy = False
 attack_training_surrogate = True
 
 [feature]

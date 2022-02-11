@@ -22,10 +22,6 @@ from attack_model_forDefense import attack_model
 
 from tqdm import tqdm
 
-from art.attacks.evasion import ProjectedGradientDescent
-from art.estimators.classification import PyTorchClassifier
-from art.attacks.evasion.projected_gradient_descent.projected_gradient_descent import ProjectedGradientDescent
-
 # some general mapping for this script
 gender_dict = {'F': 0, 'M': 1}
 leak_layer_dict = {'full': ['w0', 'b0', 'w1', 'b1', 'w2', 'b2'],
@@ -49,30 +45,15 @@ class WeightDataGenerator():
         bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
         return weights, bias, gender
 
-def evaluate(model, data_loader, loss_func, privacy_preserve=False, privacy_generator=None):
+def evaluate(model, data_loader, loss_func):
     
     model.eval()
     step_outputs = []
     for batch_idx, data_batch in enumerate(tqdm(data_loader)):
         weights, bias, y = data_batch
         weights, bias, y = weights.to(device), bias.to(device), y.to(device)
-        if not privacy_preserve:
-            weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
-            logits = model(weights_bias)
-        else:
-            weights = weights.to('cpu').float()
-            bias = bias.to('cpu').float()
-            weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
-            weights_bias = np.array(weights_bias)
-            if privacy_generator.targeted:
-                tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=weights.shape[0]))))
-                weights_bias = torch.tensor(privacy_generator.generate(weights_bias, tar_labels))
-            else:
-                weights_bias = torch.tensor(privacy_generator.generate(weights_bias))
-            weights = weights_bias[:,:,:-1].to(device)
-            bias = weights_bias[:,:,-1].to(device)
-            weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
-            logits = model(weights_bias)
+        weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
+        logits = model(weights_bias)
         
         loss = loss_func(logits, y)
 
@@ -113,7 +94,10 @@ if __name__ == '__main__':
     parser.add_argument('--eps', default=0.3)
     parser.add_argument('--eps_step', default=0.1)
     parser.add_argument('--max_iter', default=100)
+    parser.add_argument('--prob_0', default=0.5)
     parser.add_argument('--targeted', default=False, action='store_true')
+    parser.add_argument('--surrogate', default=False, action='store_true')
+    parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
     
     args = parser.parse_args()
     seed_worker(8)
@@ -140,6 +124,7 @@ if __name__ == '__main__':
     weight_idx, bias_idx = leak_layer_idx_dict[weight_name], leak_layer_idx_dict[bias_name]
 
     # 1.1 read all data and compute the tmp variables
+    # Used for normalizing the inputs. Computes variables using shadow model parameters.
     shadow_training_sample_size, shadow_data_dict = 0, {}
     print('reading file %s' % str(Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str)))
     for shadow_idx in range(5):
@@ -217,39 +202,27 @@ if __name__ == '__main__':
     if args.privacy_preserve_adversarial:
         print("Evaluating adversarial perturbed attacker performance")
         model_setting_str +=  '_eps_' + str(args.eps)
-        attack_model_result_path = attack_model_result_path.joinpath(
-                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}'.format(args.perturb_norm, 
+        if args.surrogate:
+            model_setting_str +=  '_surrogate_' + str(args.surrogate_dataset)
+        if args.prob_0 != 0.5:
+            model_setting_str +=  '_prob0_' + str(args.prob_0)
+        if args.surrogate:
+            attack_model_result_path = attack_model_result_path.joinpath(
+                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}_usingSurrogate_{}_prob0={}'.format(args.perturb_norm,
                                     args.eps, 
-                                    args.eps_step, 
-                                    str(args.targeted)))
+                                    args.eps_step,
+                                    args.targeted,
+                                    args.surrogate_dataset,
+                                    args.prob_0))
+        else:
+            attack_model_result_path = attack_model_result_path.joinpath(
+                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}_prob0={}'.format(args.perturb_norm, 
+                                    args.eps, 
+                                    args.eps_step,
+                                    args.targeted,
+                                    args.prob_0))
         os.makedirs(attack_model_result_path, exist_ok=True)
         
-        # Wrap model for use in art framework to generate adversarial perturbations
-        # To generate adversarial perturbations for weight gradients
-        wrapped_model_for_weights = PyTorchClassifier(
-                        eval_model,
-                        loss=loss,
-                        input_shape=(256,989),
-                        nb_classes=2)
-        if args.perturb_norm=='l_inf':
-            l_norm = np.inf
-        elif args.perturb_norm=='l_2':
-            l_norm = 2
-        elif args.perturb_norm=='l_1':
-            l_norm = 1
-        ############################# NEED TO REMOVE HARDCODING #######################################
-        pdb.set_trace()
-        if args.targeted:  
-            targeted = True
-        else:
-            targeted = False
-            
-        privacy_generator = ProjectedGradientDescent(wrapped_model_for_weights, 
-                                eps=float(args.eps), 
-                                eps_step=float(args.eps_step), 
-                                norm=l_norm, 
-                                max_iter=int(args.max_iter), 
-                                targeted=targeted)
         for fold_idx in range(5):
             print("Evaluating attacker model on fold {}".format(fold_idx))
             test_data_dict = {}
@@ -272,7 +245,7 @@ if __name__ == '__main__':
 
             dataset_test = WeightDataGenerator(list(test_data_dict.keys()), test_data_dict)
             test_loader = DataLoader(dataset_test, batch_size=80, num_workers=0, shuffle=False)
-            test_result = evaluate(eval_model, test_loader, loss, privacy_preserve=True, privacy_generator=privacy_generator)
+            test_result = evaluate(eval_model, test_loader, loss)
             row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
             save_result_df = pd.concat([save_result_df, row_df])
             del dataset_test, test_loader
