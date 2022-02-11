@@ -105,15 +105,15 @@ if __name__ == '__main__':
     parser.add_argument('--leak_layer', default='full')
     parser.add_argument('--dropout', default=0.2)
     parser.add_argument('--privacy_budget', default=None)
-    parser.add_argument('--privacy_preserve_adversarial', default=False)
+    parser.add_argument('--privacy_preserve_adversarial', default=False, action='store_true')
     parser.add_argument('--save_dir', default='/media/data/projects/speech-privacy')
 
-    parser.add_argument('--eval_undefended', default=False)
+    parser.add_argument('--eval_undefended', default=False, action='store_true')
     parser.add_argument('--perturb_norm', default='l_2')
     parser.add_argument('--eps', default=0.3)
     parser.add_argument('--eps_step', default=0.1)
     parser.add_argument('--max_iter', default=100)
-    parser.add_argument('--targeted', default=False)
+    parser.add_argument('--targeted', default=False, action='store_true')
     
     args = parser.parse_args()
     seed_worker(8)
@@ -178,8 +178,8 @@ if __name__ == '__main__':
     eval_model = attack_model(args.leak_layer, args.feature_type)
     eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'.pt'))))
     eval_model = eval_model.to(device)
-
-    if False: #args.eval_undefended is True: # Set to true to evaluate benign performance
+    pdb.set_trace()
+    if args.eval_undefended is True: # Set to true to evaluate benign performance
         pdb.set_trace()
         print("Evaluating benign attacker performance")
         # 2.1 we perform 5 fold evaluation, since we also train the private data 5 times
@@ -236,7 +236,8 @@ if __name__ == '__main__':
         elif args.perturb_norm=='l_1':
             l_norm = 1
         ############################# NEED TO REMOVE HARDCODING #######################################
-        if True:  
+        pdb.set_trace()
+        if args.targeted:  
             targeted = True
         else:
             targeted = False
