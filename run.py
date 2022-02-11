@@ -2,14 +2,15 @@ import numpy as np
 import os, pdb, sys
 from pathlib import Path
 import configparser
-
+import sys
 
 if __name__ == '__main__':
 
     # read config files
     config = configparser.ConfigParser()
     config.sections()
-    config.read('config.ini')
+    config.read(sys.argv[1])
+    #config.read('config.ini')
 
     # 1. feature processing
     if config['mode'].getboolean('process_feature') is True:
@@ -117,8 +118,8 @@ if __name__ == '__main__':
 
 
     # 6. Training SER model with adversarially perturbed gradients or weights (privacy preserving)
-    if config['mode'].getboolean('ser_training_privacy') is True:
-        for dataset in [config['dataset']['private_dataset'], config['dataset']['adv_dataset']]:
+    if config['mode'].getboolean('ser_training_privacy_whitebox') is True:
+        for dataset in [config['dataset']['private_dataset']]:
             cmd_str = 'taskset 100 python3 train/federated_ser_classifier_privacy.py --dataset ' + dataset
             cmd_str += ' --feature_type ' + config['feature']['feature']
             cmd_str += ' --dropout ' + config['model']['dropout']
@@ -139,3 +140,21 @@ if __name__ == '__main__':
             print('Traing SER model with privacy')
             print(cmd_str)
             os.system(cmd_str)
+    
+    # 7. Training surrogate attack model
+    if config['mode'].getboolean('attack_training_surrogate') is True:
+        cmd_str = 'taskset 100 python3 train/federated_attribute_attack_surrogate.py --dataset ' + config['dataset']['private_dataset']
+        cmd_str += ' --norm znorm --optimizer adam'
+        cmd_str += ' --adv_dataset ' + config['dataset']['adv_dataset']
+        cmd_str += ' --feature_type ' + config['feature']['feature']
+        cmd_str += ' --dropout ' + config['model']['dropout']
+        cmd_str += ' --model_type ' + config['model']['fed_model']
+        cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
+        cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
+        cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
+        cmd_str += ' --save_dir ' + config['dir']['save_dir']
+        cmd_str += ' --leak_layer first --model_learning_rate 0.0001'
+        
+        print('Traing Attack model')
+        print(cmd_str)
+        os.system(cmd_str)

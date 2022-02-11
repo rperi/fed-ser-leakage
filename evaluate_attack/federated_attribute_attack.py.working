@@ -257,7 +257,7 @@ if __name__ == '__main__':
                 row_df = pd.DataFrame(index=['fold'+str(int(fold_idx+1))])
                 
                 # Model related
-                federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params_privacy', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
+                federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
                 weight_file_str = str(federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
 
                 with open(weight_file_str, 'rb') as f:

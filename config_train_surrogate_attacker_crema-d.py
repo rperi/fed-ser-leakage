@@ -10,17 +10,18 @@ process_training = False
 ser_training = False
 attack_training = False
 attack_evaluate = False
-privacy_preserve_adversarial = True
+privacy_preserve_adversarial = False
 eval_undefended = False
 targeted = True
-ser_training_privacy_whitebox = True
+ser_training_privacy_whitebox = False
+attack_training_surrogate = True
 
 [feature]
 feature = emobase
 
 [dataset]
 private_dataset = crema-d
-adv_dataset = iemocap_msp-improv
+adv_dataset = crema-d
 
 [model]
 dropout = 0.2
@@ -39,5 +40,5 @@ global_epochs = 200
 [privacy_preserve]
 norm = l_inf
 eps = 0.01
-eps_step = 0.002
+eps_step = 0.02
 max_iter = 100
