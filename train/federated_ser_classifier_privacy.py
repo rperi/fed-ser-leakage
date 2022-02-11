@@ -214,6 +214,7 @@ if __name__ == '__main__':
     
     # Load attacker model
     attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str        )
+    model_setting_str +=  '_eps_' + str(args.eps)
     loss = nn.NLLLoss().to(device)
     save_result_df = pd.DataFrame()
     eval_model = attack_model(args.leak_layer, args.feature_type)
@@ -278,7 +279,7 @@ if __name__ == '__main__':
         
         # test loader
         dataset_test = DatasetGenerator(test_speaker_dict)
-        test_dataloaders = DataLoader(dataset_test, batch_size=20, num_workers=0, shuffle=False)
+        test_dataloaders = DataLoader(dataset_test, batch_size=20, num_workers=4, shuffle=False)
 
         # Training steps
         result_dict, best_score = {}, 0
