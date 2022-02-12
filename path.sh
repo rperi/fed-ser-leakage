@@ -1,1 +1,1 @@
-export PYTHONPATH=$PYTHONPATH:/work_new/rperi/privacy_preserving/personal/adversarial-robustness-toolbox
+export PYTHONPATH=$PYTHONPATH:/proj/rperi/privacy/git_dir/adversarial-robustness-toolbox

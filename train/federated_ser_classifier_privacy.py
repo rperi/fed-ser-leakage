@@ -26,6 +26,7 @@ from art.estimators.classification import PyTorchClassifier
 from art.attacks.evasion.projected_gradient_descent.projected_gradient_descent import ProjectedGradientDescent
 import pdb
 import torch.nn.functional as F
+from normalize_gradients_for_attacker import Normalize_gradients
 
 # define label mapping
 emo_dict = {'neu': 0, 'hap': 1, 'sad': 2, 'ang': 3}
@@ -162,7 +163,8 @@ def privacy_perturb(updates, prob_0):
     weights_bias = np.array(weights_bias)
     if privacy_generator.targeted:
         prob_1 = 1-float(prob_0)  # Probability of generating label=1
-        tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=1, p=[prob_0,prob_1]))))
+        prob_0 = float(prob_0)
+        tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=1, p=[prob_0,prob_1])), num_classes=2))
         weights_bias = torch.tensor(privacy_generator.generate(np.expand_dims(weights_bias,0), tar_labels))
     else:
         weights_bias = torch.tensor(privacy_generator.generate(np.expand_dims(weights_bias,0)))
@@ -196,6 +198,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_iter', default=100)
     parser.add_argument('--targeted', default=False, action='store_true')
     parser.add_argument('--prob_0', default=0.5) # Probability of choosing label 0 as target
+    parser.add_argument('--adv_dataset')  # To be used in white-box scenario where we assume we know what data attacker trained their model
+    parser.add_argument('--normalize', default=False, action='store_true')  # Flag to add gradient normalizer as pre-processor to replicate the attacker
     parser.add_argument('--surrogate', default=False, action='store_true')
     parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
     args = parser.parse_args()
@@ -233,7 +237,6 @@ if __name__ == '__main__':
         l_norm = 2 
     elif args.perturb_norm=='l_1':
         l_norm = 1 
-    ############################# NEED TO REMOVE HARDCODING #######################################
     if args.targeted:  
         targeted = True
     else:
@@ -242,11 +245,29 @@ if __name__ == '__main__':
     # Wrap model for use in art framework to generate adversarial perturbations
     # To generate adversarial perturbations for weight gradients
     # Assume attacking only using the first layer
-    wrapped_model_for_weights = PyTorchClassifier(
-                    eval_model,
-                    loss=loss,
-                    input_shape=(256,989),
-                    nb_classes=2)
+    if args.normalize:
+        normalizer = Normalize_gradients(
+                        save_dir=args.save_dir,
+                        leak_layer=args.leak_layer,
+                        model_type=args.model_type,
+                        pred=args.pred,
+                        feature_type=args.feature_type,
+                        adv_dataset=args.adv_dataset,
+                        model_setting_str=model_setting_str,
+                        num_epochs=args.num_epochs
+                        )
+        wrapped_model_for_weights = PyTorchClassifier(
+                        eval_model,
+                        loss=loss,
+                        input_shape=(256,989),
+                        nb_classes=2,
+                        preprocessing_defences=normalizer)
+    else:
+        wrapped_model_for_weights = PyTorchClassifier(
+                        eval_model,
+                        loss=loss,
+                        input_shape=(256,989),
+                        nb_classes=2)
     privacy_generator = ProjectedGradientDescent(wrapped_model_for_weights, 
                             eps=float(args.eps), 
                             eps_step=float(args.eps_step), 
@@ -254,7 +275,6 @@ if __name__ == '__main__':
                             max_iter=int(args.max_iter), 
                             targeted=targeted)
     model_setting_str +=  '_eps_' + str(args.eps)
-    pdb.set_trace()
     if args.surrogate:
         model_setting_str +=  '_surrogate_' + str(args.surrogate_dataset)
     if args.prob_0 != 0.5:
@@ -317,7 +337,6 @@ if __name__ == '__main__':
                     local_update, train_result = trainer.update_weights(model=copy.deepcopy(global_model))
                 else:
                     local_update, train_result = trainer.update_gradients(model=copy.deepcopy(global_model))
-
                 # Generate adversarial perturbations
                 local_update = privacy_perturb(local_update, prob_0=args.prob_0)
 

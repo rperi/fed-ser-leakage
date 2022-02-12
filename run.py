@@ -142,6 +142,11 @@ if __name__ == '__main__':
             if config['mode'].getboolean('surrogate'):
                 cmd_str += ' --surrogate '
                 cmd_str += ' --surrogate_dataset ' + config['mode']['surrogate_dataset']
+            else:
+                cmd_str += ' --adv_dataset ' + config['dataset']['adv_dataset']
+            if config['mode'].getboolean('normalize'):
+                cmd_str += ' --normalize '
+            
                 
             print('Traing SER model with privacy')
             print(cmd_str)
