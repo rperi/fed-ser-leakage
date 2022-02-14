@@ -79,6 +79,7 @@ if __name__ == '__main__':
     if config['mode'].getboolean('attack_evaluate') is True:
         if config['mode'].getboolean('privacy_preserve_adversarial'):
             cmd_str = 'taskset 100 python3 evaluate_attack/federated_attribute_attack.py --dataset ' + config['dataset']['private_dataset']
+            #cmd_str = 'taskset 100 python3 evaluate_attack/federated_attribute_attack_concept.py --dataset ' + config['dataset']['private_dataset']
             cmd_str += ' --adv_dataset ' + config['dataset']['adv_dataset']
             cmd_str += ' --feature_type ' + config['feature']['feature']
             cmd_str += ' --dropout ' + config['model']['dropout']
@@ -101,6 +102,9 @@ if __name__ == '__main__':
             if config['mode'].getboolean('surrogate'):
                 cmd_str += ' --surrogate '
                 cmd_str += ' --surrogate_dataset ' + config['mode']['surrogate_dataset']
+            if config['mode'].getboolean('targeted'):
+                cmd_str += ' --targeted '
+
             #cmd_str += ' --privacy_preserve_adversarial ' + config['mode']['privacy_preserve_adversarial']
         else: 
             cmd_str = 'taskset 100 python3 evaluate_attack/federated_attribute_attack.py --dataset ' + config['dataset']['private_dataset']
@@ -142,10 +146,11 @@ if __name__ == '__main__':
             if config['mode'].getboolean('surrogate'):
                 cmd_str += ' --surrogate '
                 cmd_str += ' --surrogate_dataset ' + config['mode']['surrogate_dataset']
-            else:
-                cmd_str += ' --adv_dataset ' + config['dataset']['adv_dataset']
+                if config['mode'].getboolean('normalize'):
+                    cmd_str += ' --adv_dataset ' + config['mode']['surrogate_dataset']
             if config['mode'].getboolean('normalize'):
                 cmd_str += ' --normalize '
+                cmd_str += ' --adv_dataset ' + config['mode']['adv_dataset']
             
                 
             print('Traing SER model with privacy')

@@ -198,8 +198,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_iter', default=100)
     parser.add_argument('--targeted', default=False, action='store_true')
     parser.add_argument('--prob_0', default=0.5) # Probability of choosing label 0 as target
-    parser.add_argument('--adv_dataset')  # To be used in white-box scenario where we assume we know what data attacker trained their model
     parser.add_argument('--normalize', default=False, action='store_true')  # Flag to add gradient normalizer as pre-processor to replicate the attacker
+    parser.add_argument('--adv_dataset')  # Used to compute statstics for normalization. When "surrgoate" flag is true, this is same as surrogate_dataset
     parser.add_argument('--surrogate', default=False, action='store_true')
     parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
     args = parser.parse_args()
@@ -277,8 +277,7 @@ if __name__ == '__main__':
     model_setting_str +=  '_eps_' + str(args.eps)
     if args.surrogate:
         model_setting_str +=  '_surrogate_' + str(args.surrogate_dataset)
-    if args.prob_0 != 0.5:
-        model_setting_str +=  '_prob0_' + str(args.prob_0)
+    model_setting_str +=  '_prob0_' + str(args.prob_0)
     # We perform 5 fold experiments
     for fold_idx in tqdm(range(5)):
         # save folder details

@@ -163,7 +163,6 @@ if __name__ == '__main__':
     eval_model = attack_model(args.leak_layer, args.feature_type)
     eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'.pt'))))
     eval_model = eval_model.to(device)
-    pdb.set_trace()
 
     if args.eval_undefended is True: # Set to true to evaluate benign performance
         pdb.set_trace()
@@ -204,23 +203,25 @@ if __name__ == '__main__':
         model_setting_str +=  '_eps_' + str(args.eps)
         if args.surrogate:
             model_setting_str +=  '_surrogate_' + str(args.surrogate_dataset)
-        if args.prob_0 != 0.5:
+        if args.targeted:
             model_setting_str +=  '_prob0_' + str(args.prob_0)
         if args.surrogate:
             attack_model_result_path = attack_model_result_path.joinpath(
-                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}_usingSurrogate_{}_prob0={}'.format(args.perturb_norm,
+                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}_usingSurrogate_{}_prob0={}_maxiter={}'.format(args.perturb_norm,
                                     args.eps, 
                                     args.eps_step,
                                     args.targeted,
                                     args.surrogate_dataset,
-                                    args.prob_0))
+                                    args.prob_0,
+                                    args.max_iter))
         else:
             attack_model_result_path = attack_model_result_path.joinpath(
-                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}_prob0={}'.format(args.perturb_norm, 
+                                    'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}_prob0={}_maxiter={}'.format(args.perturb_norm, 
                                     args.eps, 
                                     args.eps_step,
                                     args.targeted,
-                                    args.prob_0))
+                                    args.prob_0,
+                                    args.max_iter))
         os.makedirs(attack_model_result_path, exist_ok=True)
         
         for fold_idx in range(5):
@@ -244,7 +245,7 @@ if __name__ == '__main__':
                     test_data_dict[data_key][bias_name] = gradients[bias_idx]
 
             dataset_test = WeightDataGenerator(list(test_data_dict.keys()), test_data_dict)
-            test_loader = DataLoader(dataset_test, batch_size=80, num_workers=0, shuffle=False)
+            test_loader = DataLoader(dataset_test, batch_size=64, num_workers=0, shuffle=False)
             test_result = evaluate(eval_model, test_loader, loss)
             row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
             save_result_df = pd.concat([save_result_df, row_df])

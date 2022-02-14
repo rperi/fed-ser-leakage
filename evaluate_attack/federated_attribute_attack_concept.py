@@ -49,7 +49,7 @@ class WeightDataGenerator():
         bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
         return weights, bias, gender
 
-def evaluate(model, data_loader, loss_func, privacy_preserve=False, privacy_generator=None):
+def evaluate(model, data_loader, loss_func, privacy_preserve=False, privacy_generator=None, prob_0=0.5):
     
     model.eval()
     step_outputs = []
@@ -65,7 +65,7 @@ def evaluate(model, data_loader, loss_func, privacy_preserve=False, privacy_gene
             weights_bias = torch.cat((weights,bias.unsqueeze(dim=2)),2)
             weights_bias = np.array(weights_bias)
             if privacy_generator.targeted:
-                tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=weights.shape[0]))))
+                tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=weights.shape[0], p=[0.0,1.0])), num_classes=2))
                 weights_bias = torch.tensor(privacy_generator.generate(weights_bias, tar_labels))
             else:
                 weights_bias = torch.tensor(privacy_generator.generate(weights_bias))
@@ -113,6 +113,7 @@ if __name__ == '__main__':
     parser.add_argument('--eps', default=0.3)
     parser.add_argument('--eps_step', default=0.1)
     parser.add_argument('--max_iter', default=100)
+    parser.add_argument('--prob_0', default=0.5)
     parser.add_argument('--targeted', default=False, action='store_true')
     
     args = parser.parse_args()
@@ -216,7 +217,7 @@ if __name__ == '__main__':
         print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
     if args.privacy_preserve_adversarial:
         print("Evaluating adversarial perturbed attacker performance")
-        model_setting_str +=  '_eps_' + str(args.eps)
+        #model_setting_str +=  '_eps_' + str(args.eps)
         attack_model_result_path = attack_model_result_path.joinpath(
                                     'adversarial_privacy_preserve_norm={}_eps={}_epsstep={}_targeted={}'.format(args.perturb_norm, 
                                     args.eps, 
@@ -241,6 +242,7 @@ if __name__ == '__main__':
         pdb.set_trace()
         if args.targeted:  
             targeted = True
+            prob_0 = args.prob_0
         else:
             targeted = False
             
@@ -271,8 +273,11 @@ if __name__ == '__main__':
                     test_data_dict[data_key][bias_name] = gradients[bias_idx]
 
             dataset_test = WeightDataGenerator(list(test_data_dict.keys()), test_data_dict)
-            test_loader = DataLoader(dataset_test, batch_size=80, num_workers=0, shuffle=False)
-            test_result = evaluate(eval_model, test_loader, loss, privacy_preserve=True, privacy_generator=privacy_generator)
+            test_loader = DataLoader(dataset_test, batch_size=64, num_workers=0, shuffle=False)
+            if targeted:
+                test_result = evaluate(eval_model, test_loader, loss, privacy_preserve=True, privacy_generator=privacy_generator, prob_0=args.prob_0)
+            else:
+                test_result = evaluate(eval_model, test_loader, loss, privacy_preserve=True, privacy_generator=privacy_generator)
             row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
             save_result_df = pd.concat([save_result_df, row_df])
             del dataset_test, test_loader
