@@ -6,10 +6,13 @@ import sys
 
 if __name__ == '__main__':
 
+    config_file = sys.argv[1]
+    save_dir = sys.argv[2]
+    
     # read config files
     config = configparser.ConfigParser()
     config.sections()
-    config.read(sys.argv[1])
+    config.read(config_file)
     #config.read('config.ini')
 
     # 1. feature processing
@@ -21,7 +24,7 @@ if __name__ == '__main__':
                 cmd_str = 'taskset 100 python3 feature_extraction/pretrained_audio_feature_extraction.py --dataset ' + dataset
             cmd_str += ' --feature_type ' + config['feature']['feature']
             cmd_str += ' --data_dir ' + config['dir'][dataset]
-            cmd_str += ' --save_dir ' + config['dir']['save_dir']
+            cmd_str += ' --save_dir ' + save_dir
             
             print('Extract features')
             print(cmd_str)
@@ -51,7 +54,7 @@ if __name__ == '__main__':
             cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
             cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
             cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
-            cmd_str += ' --save_dir ' + config['dir']['save_dir']
+            cmd_str += ' --save_dir ' + save_dir
             
             print('Traing SER model')
             print(cmd_str)
@@ -68,9 +71,10 @@ if __name__ == '__main__':
         cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
         cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
         cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
-        cmd_str += ' --save_dir ' + config['dir']['save_dir']
-        cmd_str += ' --leak_layer first --model_learning_rate 0.0001'
-        
+        cmd_str += ' --save_dir ' + save_dir
+        cmd_str += ' --leak_layer first --model_learning_rate 0.0001 '
+        if config['mode'].getboolean('normalize_disable'):
+            cmd_str += '--normalize_disable '
         print('Traing Attack model')
         print(cmd_str)
         os.system(cmd_str)
@@ -87,7 +91,7 @@ if __name__ == '__main__':
             cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
             cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
             cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
-            cmd_str += ' --save_dir ' + config['dir']['save_dir']
+            cmd_str += ' --save_dir ' + save_dir
             cmd_str += ' --leak_layer first '
             if config['mode'].getboolean('eval_undefended'):            
                 cmd_str += ' --eval_undefended '
@@ -104,6 +108,8 @@ if __name__ == '__main__':
                 cmd_str += ' --surrogate_dataset ' + config['mode']['surrogate_dataset']
             if config['mode'].getboolean('targeted'):
                 cmd_str += ' --targeted '
+            if config['mode'].getboolean('normalize_disable'):
+                cmd_str += ' --normalize_disable '
 
             #cmd_str += ' --privacy_preserve_adversarial ' + config['mode']['privacy_preserve_adversarial']
         else: 
@@ -115,7 +121,7 @@ if __name__ == '__main__':
             cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
             cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
             cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
-            cmd_str += ' --save_dir ' + config['dir']['save_dir']
+            cmd_str += ' --save_dir ' + save_dir
             cmd_str += ' --leak_layer first'
             cmd_str += ' --eval_undefended '
         print('Evaluating Attack model')
@@ -133,7 +139,7 @@ if __name__ == '__main__':
             cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
             cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
             cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
-            cmd_str += ' --save_dir ' + config['dir']['save_dir']
+            cmd_str += ' --save_dir ' + save_dir
             cmd_str += ' --leak_layer first '
             cmd_str += ' --perturb_norm ' + config['privacy_preserve']['norm']
             cmd_str += ' --eps ' + config['privacy_preserve']['eps']
@@ -151,8 +157,9 @@ if __name__ == '__main__':
             if config['mode'].getboolean('normalize'):
                 cmd_str += ' --normalize '
                 cmd_str += ' --adv_dataset ' + config['mode']['adv_dataset']
+            if config['mode'].getboolean('normalize_disable'):
+                cmd_str += ' --normalize_disable '
             
-                
             print('Traing SER model with privacy')
             print(cmd_str)
             os.system(cmd_str)
@@ -168,7 +175,7 @@ if __name__ == '__main__':
         cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
         cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
         cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
-        cmd_str += ' --save_dir ' + config['dir']['save_dir']
+        cmd_str += ' --save_dir ' + save_dir
         cmd_str += ' --leak_layer first --model_learning_rate 0.0001'
         
         print('Traing Attack model')

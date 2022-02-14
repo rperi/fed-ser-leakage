@@ -202,6 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--adv_dataset')  # Used to compute statstics for normalization. When "surrgoate" flag is true, this is same as surrogate_dataset
     parser.add_argument('--surrogate', default=False, action='store_true')
     parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
+    parser.add_argument('--normalize_disable', default=False, action='store_true')
     args = parser.parse_args()
 
     preprocess_path = Path(args.save_dir).joinpath('federated_learning', args.feature_type, args.pred)
@@ -221,7 +222,10 @@ if __name__ == '__main__':
     # model_setting_str += '_local_dp_' + str(args.local_dp).replace('.', '')
     
     # Load attacker model
-    attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str        )
+    if args.normalize_disable:
+        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str+'_norm-disable_True')
+    else:
+        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str)
     loss = nn.NLLLoss().to(device)
     save_result_df = pd.DataFrame()
     eval_model = attack_model(args.leak_layer, args.feature_type)
@@ -278,6 +282,9 @@ if __name__ == '__main__':
     if args.surrogate:
         model_setting_str +=  '_surrogate_' + str(args.surrogate_dataset)
     model_setting_str +=  '_prob0_' + str(args.prob_0)
+    if args.normalize_disable:
+        model_setting_str +=  '_norm-disable_True'
+            
     # We perform 5 fold experiments
     for fold_idx in tqdm(range(5)):
         # save folder details

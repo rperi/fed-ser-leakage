@@ -43,10 +43,14 @@ class WeightDataGenerator():
     def __getitem__(self, idx):
         data_file_str = self.dict_keys[idx]
         gender = gender_dict[self.data_dict[data_file_str]['gender']]
-        tmp_data = (self.data_dict[data_file_str][weight_name] - weight_norm_mean_dict[weight_name]) / (weight_norm_std_dict[weight_name] + 0.00001)
-        weights = torch.from_numpy(np.ascontiguousarray(tmp_data))
-        tmp_data = (self.data_dict[data_file_str][bias_name] - weight_norm_mean_dict[bias_name]) / (weight_norm_std_dict[bias_name] + 0.00001)
-        bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
+        if args.normalize_disable:
+            weights = torch.from_numpy(np.ascontiguousarray(self.data_dict[data_file_str][weight_name]))
+            bias = torch.from_numpy(np.ascontiguousarray(self.data_dict[data_file_str][bias_name]))
+        else:
+            tmp_data = (self.data_dict[data_file_str][weight_name] - weight_norm_mean_dict[weight_name]) / (weight_norm_std_dict[weight_name] + 0.00001)
+            weights = torch.from_numpy(np.ascontiguousarray(tmp_data))
+            tmp_data = (self.data_dict[data_file_str][bias_name] - weight_norm_mean_dict[bias_name]) / (weight_norm_std_dict[bias_name] + 0.00001)
+            bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
         return weights, bias, gender
 
 def evaluate(model, data_loader, loss_func, privacy_preserve=False, privacy_generator=None, prob_0=0.5):
@@ -115,6 +119,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_iter', default=100)
     parser.add_argument('--prob_0', default=0.5)
     parser.add_argument('--targeted', default=False, action='store_true')
+    parser.add_argument('--normalize_disable', default=False, action='store_true')
     
     args = parser.parse_args()
     seed_worker(8)
@@ -173,7 +178,10 @@ if __name__ == '__main__':
         
     # 2. we evaluate the attacker performance on service provider training
     import pdb
-    attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str    )
+    if args.normalize_disable:
+        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str+'_norm-disable_True')
+    else:
+        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str)
     loss = nn.NLLLoss().to(device)
     save_result_df = pd.DataFrame()
     eval_model = attack_model(args.leak_layer, args.feature_type)

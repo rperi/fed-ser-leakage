@@ -39,10 +39,14 @@ class WeightDataGenerator():
     def __getitem__(self, idx):
         data_file_str = self.dict_keys[idx]
         gender = gender_dict[self.data_dict[data_file_str]['gender']]
-        tmp_data = (self.data_dict[data_file_str][weight_name] - weight_norm_mean_dict[weight_name]) / (weight_norm_std_dict[weight_name] + 0.00001)
-        weights = torch.from_numpy(np.ascontiguousarray(tmp_data))
-        tmp_data = (self.data_dict[data_file_str][bias_name] - weight_norm_mean_dict[bias_name]) / (weight_norm_std_dict[bias_name] + 0.00001)
-        bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
+        if args.normalize_disable:
+            weights = torch.from_numpy(np.ascontiguousarray(self.data_dict[data_file_str][weight_name]))
+            bias = torch.from_numpy(np.ascontiguousarray(self.data_dict[data_file_str][bias_name]))
+        else:
+            tmp_data = (self.data_dict[data_file_str][weight_name] - weight_norm_mean_dict[weight_name]) / (weight_norm_std_dict[weight_name] + 0.00001)
+            weights = torch.from_numpy(np.ascontiguousarray(tmp_data))
+            tmp_data = (self.data_dict[data_file_str][bias_name] - weight_norm_mean_dict[bias_name]) / (weight_norm_std_dict[bias_name] + 0.00001)
+            bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
         return weights, bias, gender
 
 def evaluate(model, data_loader, loss_func):
@@ -98,6 +102,7 @@ if __name__ == '__main__':
     parser.add_argument('--targeted', default=False, action='store_true')
     parser.add_argument('--surrogate', default=False, action='store_true')
     parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
+    parser.add_argument('--normalize_disable', default=False, action='store_true')
     
     args = parser.parse_args()
     seed_worker(8)
@@ -165,7 +170,6 @@ if __name__ == '__main__':
     eval_model = eval_model.to(device)
 
     if args.eval_undefended is True: # Set to true to evaluate benign performance
-        pdb.set_trace()
         print("Evaluating benign attacker performance")
         # 2.1 we perform 5 fold evaluation, since we also train the private data 5 times
         for fold_idx in range(5):
@@ -193,8 +197,12 @@ if __name__ == '__main__':
         
             row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
             save_result_df = pd.concat([save_result_df, row_df])
-            save_result_df.to_csv(str(attack_model_result_path.joinpath('private_' + str(args.dataset) + '_result.csv')))
             del dataset_test, test_loader
+
+        pdb.set_trace()
+        row_df = pd.DataFrame(index=['average'])
+        row_df['acc'], row_df['uar'] = np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])
+        save_result_df = pd.concat([save_result_df, row_df])
             
         print("Performance on benign samples\n")
         print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
@@ -222,16 +230,20 @@ if __name__ == '__main__':
                                     args.targeted,
                                     args.prob_0,
                                     args.max_iter))
+        if args.normalize_disable:
+            attack_model_result_path = Path(str(attack_model_result_path)+'_norm-disable_True')
         os.makedirs(attack_model_result_path, exist_ok=True)
-        
         for fold_idx in range(5):
             print("Evaluating attacker model on fold {}".format(fold_idx))
+            if args.normalize_disable:
+                federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params_privacy', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str + '_norm-disable_True', 'fold'+str(int(fold_idx+1)))
+            else:    
+                federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params_privacy', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
             test_data_dict = {}
             for epoch in range(int(args.num_epochs)):
                 row_df = pd.DataFrame(index=['fold'+str(int(fold_idx+1))])
                 
                 # Model related
-                federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params_privacy', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
                 weight_file_str = str(federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
 
                 with open(weight_file_str, 'rb') as f:
