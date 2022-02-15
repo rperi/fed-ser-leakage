@@ -17,8 +17,6 @@ sys.path.append(os.path.join(str(Path(os.path.realpath(__file__)).parents[1]), '
 from dnn_models import dnn_classifier
 from update import average_weights, average_gradients, local_trainer
 
-from attack_model_forDefense import attack_model
-
 from tqdm import tqdm
 
 from art.attacks.evasion import ProjectedGradientDescent
@@ -156,20 +154,18 @@ def read_data_dict_by_client(dataset_list, fold_idx):
                     
     return return_train_dict, return_val_dict, return_test_dict
 
-def privacy_perturb(updates, prob_0):
+def random_perturb(updates, std=0.1):
     weights = updates['dense1.weight'].to('cpu').float()
     bias = updates['dense1.bias'].to('cpu').float()
     weights_bias = torch.cat((weights,bias.unsqueeze(dim=1)),1)
     weights_bias = np.array(weights_bias)
-    if privacy_generator.targeted:
-        prob_1 = 1-float(prob_0)  # Probability of generating label=1
-        prob_0 = float(prob_0)
-        tar_labels = np.array(F.one_hot(torch.tensor(np.random.choice([0,1],size=1, p=[prob_0,prob_1])), num_classes=2))
-        weights_bias = torch.tensor(privacy_generator.generate(np.expand_dims(weights_bias,0), tar_labels))
-    else:
-        weights_bias = torch.tensor(privacy_generator.generate(np.expand_dims(weights_bias,0)))
-    weights = weights_bias[0,:,:-1].to(device)
-    bias = weights_bias[0,:,-1].to(device)
+    
+    noise = np.random.normal(0, float(std), weights_bias.shape)
+    weights_bias += noise
+    weights_bias = torch.tensor(weights_bias) 
+    
+    weights = weights_bias[:,:-1].to(device)
+    bias = weights_bias[:,-1].to(device)
     updates['dense1.weight'] = weights
     updates['dense1.bias'] = bias
     return updates 
@@ -192,17 +188,7 @@ if __name__ == '__main__':
     parser.add_argument('--pred', default='emotion')
     parser.add_argument('--save_dir', default='/media/data/projects/speech-privacy')
     parser.add_argument('--leak_layer', default='first')
-    parser.add_argument('--perturb_norm', default='l_2')
-    parser.add_argument('--eps', default=0.3)
-    parser.add_argument('--eps_step', default=0.1)
-    parser.add_argument('--max_iter', default=100)
-    parser.add_argument('--targeted', default=False, action='store_true')
-    parser.add_argument('--prob_0', default=0.5) # Probability of choosing label 0 as target
-    parser.add_argument('--normalize', default=False, action='store_true')  # Flag to add gradient normalizer as pre-processor to replicate the attacker
-    parser.add_argument('--adv_dataset')  # Used to compute statstics for normalization. When "surrgoate" flag is true, this is same as surrogate_dataset
-    parser.add_argument('--surrogate', default=False, action='store_true')
-    parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
-    parser.add_argument('--normalize_disable', default=False, action='store_true')
+    parser.add_argument('--noise_std', default=0.1)
     args = parser.parse_args()
 
     preprocess_path = Path(args.save_dir).joinpath('federated_learning', args.feature_type, args.pred)
@@ -221,70 +207,11 @@ if __name__ == '__main__':
     model_setting_str += '_lr_' + str(args.learning_rate)[2:]
     # model_setting_str += '_local_dp_' + str(args.local_dp).replace('.', '')
     
-    # Load attacker model
-    if args.normalize_disable:
-        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str+'_norm-disable_True')
-    else:
-        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str)
     loss = nn.NLLLoss().to(device)
     save_result_df = pd.DataFrame()
-    eval_model = attack_model(args.leak_layer, args.feature_type)
-    if args.surrogate:
-        eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'_surrogate_{}.pt'.format(args.surrogate_dataset)))))
-    else:
-        eval_model.load_state_dict(torch.load(str(attack_model_result_path.joinpath('private_'+args.dataset+'.pt'))))
-    eval_model = eval_model.to(device)
     
-    if args.perturb_norm=='l_inf':
-        l_norm = np.inf
-    elif args.perturb_norm=='l_2':
-        l_norm = 2 
-    elif args.perturb_norm=='l_1':
-        l_norm = 1 
-    if args.targeted:  
-        targeted = True
-    else:
-        targeted = False
-
-    # Wrap model for use in art framework to generate adversarial perturbations
-    # To generate adversarial perturbations for weight gradients
-    # Assume attacking only using the first layer
-    if args.normalize:
-        normalizer = Normalize_gradients(
-                        save_dir=args.save_dir,
-                        leak_layer=args.leak_layer,
-                        model_type=args.model_type,
-                        pred=args.pred,
-                        feature_type=args.feature_type,
-                        adv_dataset=args.adv_dataset,
-                        model_setting_str=model_setting_str,
-                        num_epochs=args.num_epochs
-                        )
-        wrapped_model_for_weights = PyTorchClassifier(
-                        eval_model,
-                        loss=loss,
-                        input_shape=(256,989),
-                        nb_classes=2,
-                        preprocessing_defences=normalizer)
-    else:
-        wrapped_model_for_weights = PyTorchClassifier(
-                        eval_model,
-                        loss=loss,
-                        input_shape=(256,989),
-                        nb_classes=2)
-    privacy_generator = ProjectedGradientDescent(wrapped_model_for_weights, 
-                            eps=float(args.eps), 
-                            eps_step=float(args.eps_step), 
-                            norm=l_norm, 
-                            max_iter=int(args.max_iter), 
-                            targeted=targeted)
-    model_setting_str +=  '_eps_' + str(args.eps)
-    if args.surrogate:
-        model_setting_str +=  '_surrogate_' + str(args.surrogate_dataset)
-    model_setting_str +=  '_prob0_' + str(args.prob_0)
-    if args.normalize_disable:
-        model_setting_str +=  '_norm-disable_True'
-            
+    model_setting_str +=  '_randomPerturb_{}'.format(args.noise_std)
+    
     # We perform 5 fold experiments
     for fold_idx in tqdm(range(5)):
         # save folder details
@@ -306,8 +233,8 @@ if __name__ == '__main__':
         
         # log saving path
         # model_result_path = Path(args.save_dir).joinpath('federated_model_params', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, save_row_str)
-        model_result_path = Path(args.save_dir).joinpath('tmp_model_params_privacy', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, save_row_str)
-        model_result_csv_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results_privacy', args.pred, args.model_type, args.feature_type, model_setting_str)
+        model_result_path = Path(args.save_dir).joinpath('tmp_model_params_randomPerturb', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, save_row_str)
+        model_result_csv_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results_randomPerturb', args.pred, args.model_type, args.feature_type, model_setting_str)
         Path.mkdir(model_result_path, parents=True, exist_ok=True)
         Path.mkdir(model_result_csv_path, parents=True, exist_ok=True)
 
@@ -345,7 +272,7 @@ if __name__ == '__main__':
                     local_update, train_result = trainer.update_gradients(model=copy.deepcopy(global_model))
 
                 # Generate adversarial perturbations
-                local_update = privacy_perturb(local_update, prob_0=args.prob_0)
+                local_update = random_perturb(local_update, args.noise_std)
 
                 local_updates.append(copy.deepcopy(local_update))
 

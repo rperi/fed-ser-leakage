@@ -182,7 +182,7 @@ if __name__ == '__main__':
     if args.normalize_disable:
         attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str+'_norm-disable_True')
     else:
-        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str+'_norm-disable_False')
+        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str)
     log_path = Path.joinpath(attack_model_result_path, 'log_private_' + str(args.dataset))
     if log_path.exists(): shutil.rmtree(log_path)
     Path.mkdir(log_path, parents=True, exist_ok=True)

@@ -38,10 +38,14 @@ class WeightDataGenerator():
     def __getitem__(self, idx):
         data_file_str = self.dict_keys[idx]
         gender = gender_dict[self.data_dict[data_file_str]['gender']]
-        tmp_data = (self.data_dict[data_file_str][weight_name] - weight_norm_mean_dict[weight_name]) / (weight_norm_std_dict[weight_name] + 0.00001)
-        weights = torch.from_numpy(np.ascontiguousarray(tmp_data))
-        tmp_data = (self.data_dict[data_file_str][bias_name] - weight_norm_mean_dict[bias_name]) / (weight_norm_std_dict[bias_name] + 0.00001)
-        bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
+        if args.normalize_disable:
+            weights = torch.from_numpy(np.ascontiguousarray(self.data_dict[data_file_str][weight_name]))
+            bias = torch.from_numpy(np.ascontiguousarray(self.data_dict[data_file_str][bias_name]))
+        else:
+            tmp_data = (self.data_dict[data_file_str][weight_name] - weight_norm_mean_dict[weight_name]) / (weight_norm_std_dict[weight_name] + 0.00001)
+            weights = torch.from_numpy(np.ascontiguousarray(tmp_data))
+            tmp_data = (self.data_dict[data_file_str][bias_name] - weight_norm_mean_dict[bias_name]) / (weight_norm_std_dict[bias_name] + 0.00001)
+            bias = torch.from_numpy(np.ascontiguousarray(tmp_data))
         return weights, bias, gender
 
 def run_one_epoch(model, data_loader, optimizer, scheduler, loss_func, epoch, mode='train'):
@@ -99,6 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('--dropout', default=0.2)
     parser.add_argument('--privacy_budget', default=None)
     parser.add_argument('--save_dir', default='/media/data/projects/speech-privacy')
+    parser.add_argument('--normalize_disable', default=False, action='store_true')  # Flag to disable normalization
     args = parser.parse_args()
 
     seed_worker(8)
@@ -175,7 +180,10 @@ if __name__ == '__main__':
     loss = nn.NLLLoss().to(device)
     
     # 2.4 log saving path
-    attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str)
+    if args.normalize_disable:
+        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str+'_norm-disable_True')
+    else:
+        attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str)
     log_path = Path.joinpath(attack_model_result_path, 'log_private_' + str(args.dataset) + '_surrogate')
     if log_path.exists(): shutil.rmtree(log_path)
     Path.mkdir(log_path, parents=True, exist_ok=True)
@@ -195,7 +203,7 @@ if __name__ == '__main__':
         if validate_result['uar'] > best_val_dict['uar'] and epoch > 30:
             best_val_dict, best_epoch = validate_result, epoch
             best_model = deepcopy(model.state_dict())
-            torch.save(deepcopy(model.state_dict()), str(attack_model_result_path.joinpath('private_'+args.dataset+'_surrogate.pt')))
+            torch.save(deepcopy(model.state_dict()), str(attack_model_result_path.joinpath('private_'+args.dataset+'_surrogate_{}.pt'.format(args.adv_dataset))))
             
         # early_stopping needs the validation loss to check if it has decresed, 
         # and if it has, it will make a checkpoint of the current model
@@ -207,4 +215,4 @@ if __name__ == '__main__':
         
         if early_stopping.early_stop and epoch > 30:
             print("Early stopping")
-            print("Saved model in {}".format(attack_model_result_path.joinpath('private_'+args.dataset+'_surrogate.pt')))
+            print("Saved model in {}".format(attack_model_result_path.joinpath('private_'+args.dataset+'_surrogate_{}.pt'.format(args.adv_dataset))))

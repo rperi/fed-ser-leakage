@@ -72,9 +72,9 @@ if __name__ == '__main__':
         cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
         cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
         cmd_str += ' --save_dir ' + save_dir
-        cmd_str += ' --leak_layer first --model_learning_rate 0.0001 '
+        cmd_str += ' --leak_layer first --model_learning_rate 0.0001'
         if config['mode'].getboolean('normalize_disable'):
-            cmd_str += '--normalize_disable '
+            cmd_str += ' --normalize_disable '
         print('Traing Attack model')
         print(cmd_str)
         os.system(cmd_str)
@@ -110,8 +110,28 @@ if __name__ == '__main__':
                 cmd_str += ' --targeted '
             if config['mode'].getboolean('normalize_disable'):
                 cmd_str += ' --normalize_disable '
+            if config['mode'].getboolean('privacy_preserve_random'):
+                cmd_str += ' --privacy_preserve_random '
 
             #cmd_str += ' --privacy_preserve_adversarial ' + config['mode']['privacy_preserve_adversarial']
+        elif config['mode'].getboolean('privacy_preserve_random'):
+            cmd_str = 'taskset 100 python3 evaluate_attack/federated_attribute_attack.py --dataset ' + config['dataset']['private_dataset']
+            #cmd_str = 'taskset 100 python3 evaluate_attack/federated_attribute_attack_concept.py --dataset ' + config['dataset']['private_dataset']
+            cmd_str += ' --adv_dataset ' + config['dataset']['adv_dataset']
+            cmd_str += ' --feature_type ' + config['feature']['feature']
+            cmd_str += ' --dropout ' + config['model']['dropout']
+            cmd_str += ' --model_type ' + config['model']['fed_model']
+            cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
+            cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
+            cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
+            cmd_str += ' --save_dir ' + save_dir
+            cmd_str += ' --leak_layer first '
+            if config['mode'].getboolean('eval_undefended'):         
+                cmd_str += ' --eval_undefended '
+                #cmd_str += ' --eval_undefended ' + config['mode']['eval_undefended']
+            cmd_str += ' --privacy_preserve_random '
+            if config['privacy_preserve']['noise_std']:
+                cmd_str += ' --noise_std ' + config['privacy_preserve']['noise_std']
         else: 
             cmd_str = 'taskset 100 python3 evaluate_attack/federated_attribute_attack.py --dataset ' + config['dataset']['private_dataset']
             cmd_str += ' --adv_dataset ' + config['dataset']['adv_dataset']
@@ -164,7 +184,27 @@ if __name__ == '__main__':
             print(cmd_str)
             os.system(cmd_str)
     
-    # 7. Training surrogate attack model
+    # 7. Training SER model with randomly perturbed gradients or weights (baseline)
+    if config['mode'].getboolean('ser_training_randomPerturb') is True:
+        for dataset in [config['dataset']['private_dataset']]:
+            cmd_str = 'taskset 100 python3 train/federated_ser_classifier_randomPerturb.py --dataset ' + dataset
+            cmd_str += ' --feature_type ' + config['feature']['feature']
+            cmd_str += ' --dropout ' + config['model']['dropout']
+            cmd_str += ' --norm znorm --optimizer adam'
+            cmd_str += ' --model_type ' + config['model']['fed_model']
+            cmd_str += ' --learning_rate ' + config[config['model']['fed_model']]['lr']
+            cmd_str += ' --local_epochs ' + config[config['model']['fed_model']]['local_epochs']
+            cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
+            cmd_str += ' --save_dir ' + save_dir
+            cmd_str += ' --leak_layer first '
+            if config['privacy_preserve']['noise_std']:
+                cmd_str += ' --noise_std ' + config['privacy_preserve']['noise_std']
+            
+            print('Traing SER model with random perturbations')
+            print(cmd_str)
+            os.system(cmd_str)
+
+    # 8. Training surrogate attack model
     if config['mode'].getboolean('attack_training_surrogate') is True:
         cmd_str = 'taskset 100 python3 train/federated_attribute_attack_surrogate.py --dataset ' + config['dataset']['private_dataset']
         cmd_str += ' --norm znorm --optimizer adam'
@@ -177,6 +217,8 @@ if __name__ == '__main__':
         cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
         cmd_str += ' --save_dir ' + save_dir
         cmd_str += ' --leak_layer first --model_learning_rate 0.0001'
+        if config['mode'].getboolean('normalize_disable'):
+            cmd_str += ' --normalize_disable '
         
         print('Traing Attack model')
         print(cmd_str)

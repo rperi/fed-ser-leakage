@@ -103,6 +103,8 @@ if __name__ == '__main__':
     parser.add_argument('--surrogate', default=False, action='store_true')
     parser.add_argument('--surrogate_dataset')  # TO be used only when above flag is set to True
     parser.add_argument('--normalize_disable', default=False, action='store_true')
+    parser.add_argument('--noise_std', default=0.01)
+    parser.add_argument('--privacy_preserve_random', default=False, action='store_true')
     
     args = parser.parse_args()
     seed_worker(8)
@@ -206,6 +208,7 @@ if __name__ == '__main__':
             
         print("Performance on benign samples\n")
         print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
+
     if args.privacy_preserve_adversarial:
         print("Evaluating adversarial perturbed attacker performance")
         model_setting_str +=  '_eps_' + str(args.eps)
@@ -233,6 +236,7 @@ if __name__ == '__main__':
         if args.normalize_disable:
             attack_model_result_path = Path(str(attack_model_result_path)+'_norm-disable_True')
         os.makedirs(attack_model_result_path, exist_ok=True)
+        pdb.set_trace()
         for fold_idx in range(5):
             print("Evaluating attacker model on fold {}".format(fold_idx))
             if args.normalize_disable:
@@ -269,4 +273,47 @@ if __name__ == '__main__':
         save_result_df = pd.concat([save_result_df, row_df])
         save_result_df.to_csv(str(attack_model_result_path.joinpath('private_' + str(args.dataset) + '_result.csv')))
         print("Performance on privacy preserved samples\n")
+        print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
+
+    pdb.set_trace()
+    if args.privacy_preserve_random:
+        print("Evaluating randomly perturbed attacker performance")
+        attack_model_result_path = attack_model_result_path.joinpath(
+                                'adversarial_privacy_preserve_randomPerturb_std={}'.format(args.noise_std))
+        model_setting_str += '_randomPerturb_{}'.format(args.noise_std)
+        os.makedirs(attack_model_result_path, exist_ok=True)
+        pdb.set_trace()
+        for fold_idx in range(5):
+            print("Evaluating attacker model on fold {}".format(fold_idx))
+            federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params_randomPerturb', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
+            test_data_dict = {}
+            for epoch in range(int(args.num_epochs)):
+                row_df = pd.DataFrame(index=['fold'+str(int(fold_idx+1))])
+                
+                # Model related
+                weight_file_str = str(federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
+
+                with open(weight_file_str, 'rb') as f:
+                    test_gradient_dict = pickle.load(f)
+                for speaker_id in test_gradient_dict:
+                    data_key = str(fold_idx)+'_'+str(epoch)+'_'+speaker_id
+                    gradients = test_gradient_dict[speaker_id]['gradient']
+                    test_data_dict[data_key] = {}
+                    test_data_dict[data_key]['gender'] = test_gradient_dict[speaker_id]['gender']
+                    test_data_dict[data_key][weight_name] = gradients[weight_idx]
+                    test_data_dict[data_key][bias_name] = gradients[bias_idx]
+
+            dataset_test = WeightDataGenerator(list(test_data_dict.keys()), test_data_dict)
+            test_loader = DataLoader(dataset_test, batch_size=64, num_workers=0, shuffle=False)
+            test_result = evaluate(eval_model, test_loader, loss)
+            row_df['acc'], row_df['uar'] = test_result['acc'], test_result['uar']
+            save_result_df = pd.concat([save_result_df, row_df])
+            del dataset_test, test_loader
+            
+        pdb.set_trace()
+        row_df = pd.DataFrame(index=['average'])
+        row_df['acc'], row_df['uar'] = np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])
+        save_result_df = pd.concat([save_result_df, row_df])
+        save_result_df.to_csv(str(attack_model_result_path.joinpath('private_' + str(args.dataset) + '_result.csv')))
+        print("Performance on randomly perturbed samples\n")
         print("Average Accuracy = {}, Average UAR = {}".format(np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])))
