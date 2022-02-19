@@ -186,7 +186,7 @@ if __name__ == '__main__':
     
     # 7. Training SER model with randomly perturbed gradients or weights (baseline)
     if config['mode'].getboolean('ser_training_randomPerturb') is True:
-        for dataset in [config['dataset']['private_dataset']]:
+        for data_idx, dataset in enumerate([config['dataset']['adv_dataset'], config['dataset']['private_dataset']]):
             cmd_str = 'taskset 100 python3 train/federated_ser_classifier_randomPerturb.py --dataset ' + dataset
             cmd_str += ' --feature_type ' + config['feature']['feature']
             cmd_str += ' --dropout ' + config['model']['dropout']
@@ -198,8 +198,11 @@ if __name__ == '__main__':
             cmd_str += ' --save_dir ' + save_dir
             cmd_str += ' --leak_layer first '
             if config['privacy_preserve']['noise_std']:
-                cmd_str += ' --noise_std ' + config['privacy_preserve']['noise_std']
-            
+                if data_idx == 1: # Private dataset. Use only one noise level to perturb
+                    cmd_str += ' --noise_std ' + config['privacy_preserve']['noise_std']
+                if data_idx == 0: # Shadow datasets. Use multiple noise levels to avoid overfitting of attacker
+                    cmd_str += ' --noise_std ' + 'multiple'
+                    
             print('Traing SER model with random perturbations')
             print(cmd_str)
             os.system(cmd_str)

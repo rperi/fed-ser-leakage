@@ -30,7 +30,8 @@ from normalize_gradients_for_attacker import Normalize_gradients
 emo_dict = {'neu': 0, 'hap': 1, 'sad': 2, 'ang': 3}
 affect_dict = {'low': 0, 'med': 1, 'high': 2}
 gender_dict = {'F': 0, 'M': 1}
-                       
+noise_std_list = [0.002, 0.004, 0.006, 0.008, 0.01, 0.02, 0.04] # To be used to generate perturbed gradients for attacker shadow datasets (To avoid overfitting)
+
 # define feature len mapping
 feature_len_dict = {'emobase': 988, 'ComParE': 6373, 'wav2vec': 9216, 
                     'apc': 512, 'distilhubert': 768, 'tera': 768, 'wav2vec2': 768,
@@ -159,7 +160,8 @@ def random_perturb(updates, std=0.1):
     bias = updates['dense1.bias'].to('cpu').float()
     weights_bias = torch.cat((weights,bias.unsqueeze(dim=1)),1)
     weights_bias = np.array(weights_bias)
-    
+    if std == 'multiple':
+        std = np.random.choice(noise_std_list)
     noise = np.random.normal(0, float(std), weights_bias.shape)
     weights_bias += noise
     weights_bias = torch.tensor(weights_bias) 
