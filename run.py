@@ -75,6 +75,12 @@ if __name__ == '__main__':
         cmd_str += ' --leak_layer first --model_learning_rate 0.0001'
         if config['mode'].getboolean('normalize_disable'):
             cmd_str += ' --normalize_disable '
+        if config['mode'].getboolean('randomPerturb'):
+            cmd_str += ' --randomPerturb '
+            if config['privacy_preserve']['noise_std']:
+                cmd_str += ' --noise_std ' + config['privacy_preserve']['noise_std']
+            else:
+                cmd_str += ' --noise_std ' + 'multiple'
         print('Traing Attack model')
         print(cmd_str)
         os.system(cmd_str)
@@ -126,6 +132,7 @@ if __name__ == '__main__':
             cmd_str += ' --num_epochs ' + config[config['model']['fed_model']]['global_epochs']
             cmd_str += ' --save_dir ' + save_dir
             cmd_str += ' --leak_layer first '
+            cmd_str += ' --model_learning_rate 0.0001'
             if config['mode'].getboolean('eval_undefended'):         
                 cmd_str += ' --eval_undefended '
                 #cmd_str += ' --eval_undefended ' + config['mode']['eval_undefended']
@@ -198,11 +205,11 @@ if __name__ == '__main__':
             cmd_str += ' --save_dir ' + save_dir
             cmd_str += ' --leak_layer first '
             if config['privacy_preserve']['noise_std']:
-                if data_idx == 1: # Private dataset. Use only one noise level to perturb
-                    cmd_str += ' --noise_std ' + config['privacy_preserve']['noise_std']
-                if data_idx == 0: # Shadow datasets. Use multiple noise levels to avoid overfitting of attacker
-                    cmd_str += ' --noise_std ' + 'multiple'
-                    
+                #if data_idx == 1: # Private dataset. Use only one noise level to perturb
+                cmd_str += ' --noise_std ' + config['privacy_preserve']['noise_std']
+                #if data_idx == 0: # Shadow datasets. Use multiple noise levels to avoid overfitting of attacker
+                #    cmd_str += ' --noise_std ' + 'multiple'
+
             print('Traing SER model with random perturbations')
             print(cmd_str)
             os.system(cmd_str)

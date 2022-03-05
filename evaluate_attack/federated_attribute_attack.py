@@ -105,6 +105,7 @@ if __name__ == '__main__':
     parser.add_argument('--normalize_disable', default=False, action='store_true')
     parser.add_argument('--noise_std', default=0.01)
     parser.add_argument('--privacy_preserve_random', default=False, action='store_true')
+    parser.add_argument('--model_learning_rate', default=0.0005)
     
     args = parser.parse_args()
     seed_worker(8)
@@ -115,7 +116,11 @@ if __name__ == '__main__':
     model_setting_str += '_dropout_' + str(args.dropout).replace('.', '')
     model_setting_str += '_lr_' + str(args.learning_rate)[2:]
     if args.privacy_budget is not None: model_setting_str += '_udp_' + str(args.privacy_budget)
-
+    model_setting_str_unperturbed = model_setting_str
+    pdb.set_trace()
+    if args.privacy_preserve_random:
+        model_setting_str += '_randomPerturb_{}'.format(args.noise_std)
+        #model_setting_str += '_randomPerturb_multiple'
     torch.cuda.empty_cache() 
     torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -133,11 +138,15 @@ if __name__ == '__main__':
     # 1.1 read all data and compute the tmp variables
     # Used for normalizing the inputs. Computes variables using shadow model parameters.
     shadow_training_sample_size, shadow_data_dict = 0, {}
-    print('reading file %s' % str(Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str)))
+    if args.privacy_preserve_random:
+        tmp_model_str = 'tmp_model_params_randomPerturb'
+    else:
+        tmp_model_str = 'tmp_model_params'
+    print('reading file %s' % str(Path(args.save_dir).joinpath(tmp_model_str, args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str)))
     for shadow_idx in range(5):
         print('reading shadow model %d' % (shadow_idx))
         for epoch in range(int(args.num_epochs)):
-            adv_federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str, 'fold'+str(int(shadow_idx+1)))
+            adv_federated_model_result_path = Path(args.save_dir).joinpath(tmp_model_str, args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str, 'fold'+str(int(shadow_idx+1)))
             file_str = str(adv_federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
             # if shadow_idx == 0 and epoch < 10:
             with open(file_str, 'rb') as f:
@@ -164,6 +173,9 @@ if __name__ == '__main__':
         
     # 2. we evaluate the attacker performance on service provider training
     import pdb
+    pdb.set_trace()
+    if args.model_learning_rate != '0.0001':
+        model_setting_str += '_modelLR_' + str(args.model_learning_rate)[2:]
     attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str    )
     loss = nn.NLLLoss().to(device)
     save_result_df = pd.DataFrame()
@@ -280,7 +292,7 @@ if __name__ == '__main__':
         print("Evaluating randomly perturbed attacker performance")
         attack_model_result_path = attack_model_result_path.joinpath(
                                 'adversarial_privacy_preserve_randomPerturb_std={}'.format(args.noise_std))
-        model_setting_str += '_randomPerturb_{}'.format(args.noise_std)
+        model_setting_str = model_setting_str_unperturbed + '_randomPerturb_{}'.format(args.noise_std)
         os.makedirs(attack_model_result_path, exist_ok=True)
         pdb.set_trace()
         for fold_idx in range(5):

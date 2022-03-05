@@ -18,8 +18,7 @@ sys.path.append(os.path.join(str(Path(os.path.realpath(__file__)).parents[1]), '
 
 from training_tools import EarlyStopping, seed_worker, result_summary
 from attack_model import attack_model
-
-EarlyStopping
+from tqdm import tqdm
 
 # some general mapping for this script
 gender_dict = {'F': 0, 'M': 1}
@@ -104,6 +103,8 @@ if __name__ == '__main__':
     parser.add_argument('--privacy_budget', default=None)
     parser.add_argument('--save_dir', default='/media/data/projects/speech-privacy')
     parser.add_argument('--normalize_disable', default=False, action='store_true')  # Flag to disable normalization
+    parser.add_argument('--randomPerturb', default=False, action='store_true')  # Flag to train using randomly perturbed gradients
+    parser.add_argument('--noise_std', default=0.1)
     args = parser.parse_args()
 
     seed_worker(8)
@@ -114,7 +115,10 @@ if __name__ == '__main__':
     model_setting_str += '_dropout_' + str(args.dropout).replace('.', '')
     model_setting_str += '_lr_' + str(args.learning_rate)[2:]
     if args.privacy_budget is not None: model_setting_str += '_udp_' + str(args.privacy_budget)
-
+    model_setting_str_unperturbed = model_setting_str
+    pdb.set_trace()
+    if args.randomPerturb:
+        model_setting_str += '_randomPerturb_{}'.format(args.noise_std)
     torch.cuda.empty_cache() 
     torch.multiprocessing.set_sharing_strategy('file_system')
     # 1. normalization tmp computations
@@ -130,10 +134,15 @@ if __name__ == '__main__':
 
     # 1.1 read all data and compute the tmp variables
     shadow_training_sample_size, shadow_data_dict = 0, {}
-    print('reading file %s' % str(Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str)))
+    if args.randomPerturb:
+        tmp_model_str = 'tmp_model_params_randomPerturb'
+    else:
+        tmp_model_str = 'tmp_model_params'
+    pdb.set_trace()
+    print('reading file %s' % str(Path(args.save_dir).joinpath(tmp_model_str, args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str)))
     for shadow_idx in range(5):
         for epoch in range(int(args.num_epochs)):
-            adv_federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str, 'fold'+str(int(shadow_idx+1)))
+            adv_federated_model_result_path = Path(args.save_dir).joinpath(tmp_model_str, args.model_type, args.pred, args.feature_type, args.adv_dataset, model_setting_str, 'fold'+str(int(shadow_idx+1)))
             file_str = str(adv_federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
             # if shadow_idx == 0 and epoch < 10:
             if epoch % 20 == 0: 
@@ -179,6 +188,8 @@ if __name__ == '__main__':
     loss = nn.NLLLoss().to(device)
     
     # 2.4 log saving path
+    if args.model_learning_rate != '0.0001':
+        model_setting_str += '_modelLR_' + str(args.model_learning_rate)[2:]
     if args.normalize_disable:
         attack_model_result_path = Path(os.path.realpath(__file__)).parents[1].joinpath('results', 'attack', args.leak_layer, args.model_type, args.feature_type, model_setting_str+'_norm-disable_True')
     else:
@@ -189,7 +200,7 @@ if __name__ == '__main__':
     
     # 2.5 training attack model
     result_dict, best_val_dict = {}, {}
-    for epoch in range(40):
+    for epoch in tqdm(range(40)):
         # perform the training, validate, and test
         train_result = run_one_epoch(model, train_loader, optimizer, scheduler, loss, epoch, mode='train')
         validate_result = run_one_epoch(model, validation_loader, optimizer, scheduler, loss, epoch, mode='validate')
@@ -228,7 +239,7 @@ if __name__ == '__main__':
             row_df = pd.DataFrame(index=['fold'+str(int(fold_idx+1))])
             
             # Model related
-            federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str, 'fold'+str(int(fold_idx+1)))
+            federated_model_result_path = Path(args.save_dir).joinpath('tmp_model_params', args.model_type, args.pred, args.feature_type, args.dataset, model_setting_str_unperturbed, 'fold'+str(int(fold_idx+1)))
             weight_file_str = str(federated_model_result_path.joinpath('gradient_hist_'+str(epoch)+'.pkl'))
 
             with open(weight_file_str, 'rb') as f:
@@ -253,4 +264,3 @@ if __name__ == '__main__':
     row_df['acc'], row_df['uar'] = np.mean(save_result_df['acc']), np.mean(save_result_df['uar'])
     save_result_df = pd.concat([save_result_df, row_df])
     save_result_df.to_csv(str(attack_model_result_path.joinpath('private_' + str(args.dataset) + '_result.csv')))
-
